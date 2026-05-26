@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # PostgreSQL база данных
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=confectionery_user
+      - POSTGRES_PASSWORD=confectionery_pass
+      - POSTGRES_DB=confectionery_db
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U confectionery_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Веб-приложение Django
+  web:
+    build: .
+    volumes:
+      - .:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=False
+      - PRODUCTION=True
+      - DATABASE_URL=postgresql://confectionery_user:confectionery_pass@db:5432/confectionery_db
+      - SECRET_KEY=django-insecure-docker-secret-key-change-in-production
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             gunicorn confectionery.wsgi:application --bind 0.0.0.0:8000"
+
+  # Nginx для статики
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    ports:
+      - "80:80"
+    depends_on:
+      - web
+
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:
